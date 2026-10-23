@@ -1,0 +1,2061 @@
+/* ISS extension (ext/iss): orbit overlay on the globe, live video in the split. */
+
+#issOverlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Above #weatherOverlay (16, its SVG takes the pointer): the ground track is clickable. */
+  z-index: 17;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+#issOverlay.is-active {
+  display: block;
+}
+
+/* Switched off by the buttons of the eye drawer (visibility_drawer.js), each one its own: the frustums and the ground track
+   (and what hangs on it: Sen's clips, the chat and weather dots, the camera view strips). With both off only the ISS and its orbit are left; no taps or drags land on what is gone. */
+#issOverlay.is-frustum-off .iss-off-frustum,
+#issOverlay.is-track-off .iss-off-track {
+  display: none !important;
+}
+
+#issSvg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /*
+   * Auto, like #weatherSvg: parent none + child auto often misses taps on
+   * mobile. Empty SVG space stays a globe gesture (data-bt-globe-surface);
+   * nothing drawn on it is a target.
+   */
+  pointer-events: auto;
+  /* A tap on the track otherwise flashes the browser's blue box around its bounding box. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+#issSvg * {
+  pointer-events: none;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.iss-orbit {
+  fill: none;
+  stroke: #fff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.iss-orbit--ahead {
+  stroke-width: 1.6;
+  stroke-opacity: 0.35;
+}
+
+.iss-orbit--behind {
+  stroke-width: 1.2;
+  stroke-opacity: 0.8;
+}
+
+/* Orange over the ring where the stream is in replay (NO_LIVE_COLOR of track_style.js); width and opacity are the yellow's. */
+.iss-orbit--nolive {
+  stroke: rgb(255, 140, 0);
+}
+
+/* Path under the ISS over the last 12 h, on the ground: blue, bright by day, dark by night
+   (overlay.js: one child path per color step, with its own stroke). */
+.iss-track {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-opacity: 0.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The grab area around the ISS: drag along the orbit to scrub time. Invisible, and gone (`visible`, not `all`) while the ISS is hidden. */
+#issSvg .iss-marker-hit {
+  fill: transparent;
+  pointer-events: visible;
+  cursor: grab;
+  touch-action: none;
+}
+
+/* Click target over the track (width set by overlay.js): a band around it, invisible. */
+#issSvg .iss-track-hit,
+#issSvg .iss-next-track-hit {
+  fill: none;
+  /* Transparent, not nearly so: nothing is painted, yet `pointer-events: stroke` still hits it. */
+  stroke: transparent;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: stroke;
+}
+
+/* Both are clickable: the past track jumps there, the one around the next pass offers the calendar entry. */
+#issSvg .iss-track-hit,
+#issSvg .iss-next-track-hit {
+  cursor: pointer;
+}
+
+/* Date / time of the point of a track under the mouse. */
+.iss-hover-dot {
+  fill: #fff;
+  stroke: rgba(0, 0, 0, 0.7);
+  stroke-width: 1.5;
+}
+
+.iss-track-tip {
+  position: absolute;
+  z-index: 1;
+  transform: translateY(-50%);
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.iss-track-tip-state {
+  margin-top: 2px;
+  font-weight: 700;
+}
+
+.iss-track-tip[hidden] {
+  display: none;
+}
+
+/* Label of the path of a Sen clip (title, place, when and how long, link to sen.com). A link to tap once pinned (touch). */
+.iss-archive-tip {
+  position: absolute;
+  z-index: 2;
+  transform: translateY(-50%);
+  max-width: min(320px, 90%);
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  border: 1px solid #1de9b6;
+  color: #fff;
+  font: 600 12px/1.25 system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.iss-archive-tip[hidden] {
+  display: none;
+}
+
+.iss-archive-tip-title {
+  font-weight: 700;
+  white-space: normal;
+}
+
+.iss-archive-tip-meta {
+  margin-top: 2px;
+  font-weight: 500;
+  opacity: 0.85;
+  white-space: pre-line;
+}
+
+.iss-archive-tip-play {
+  display: block;
+  margin: 3px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #1de9b6;
+  font: 700 12px/1.25 system-ui, sans-serif;
+  text-align: left;
+}
+
+.iss-archive-tip-play:not(:disabled) {
+  cursor: pointer;
+}
+
+.iss-archive-tip-play:disabled {
+  opacity: 1;
+}
+
+.iss-archive-tip-link[hidden] {
+  display: none;
+}
+
+.iss-archive-tip-link {
+  display: block;
+  margin-top: 3px;
+  color: #1de9b6;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+/* Sen's live chat: the line under the pointer on the ground track (the clips' label, with a jump button once pinned). */
+.iss-chat-tip {
+  /*
+   * In the body, fixed to the window (chat_overlay.js): over the chrome, whose #topUI is 20, menus and all, so one step above it.
+   * The dialogs are in #topUI too, so this lies over them: the layer puts the bubble away when one opens.
+   */
+  position: fixed;
+  z-index: 21;
+  border-color: #ffb300;
+}
+
+.iss-chat-tip-line {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.iss-chat-tip-line button {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.iss-chat-tip-line button.iss-chat-time {
+  margin-right: 0.6em;
+  color: #8fa1b3;
+}
+
+.iss-chat-tip-line button.iss-chat-clock {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(255, 179, 0, 0.25);
+  color: #ffc94d;
+}
+
+.iss-chat-tip-line button:hover,
+.iss-chat-tip-line button:focus-visible {
+  text-decoration: underline;
+}
+
+/* A press lights up the time it jumps to (blue), and nothing else: no browser flash. */
+.iss-chat-tip,
+.iss-chat-tip-line button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-chat-tip-line button:active {
+  background: rgba(94, 132, 241, 0.6);
+  color: #fff;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(94, 132, 241, 0.6);
+}
+
+/* The video has nothing at that time (the signal was lost): the time stays, dimmed, and does nothing. */
+.iss-chat-tip-line .is-unplayable {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Weather's events on the ground: the label of a vortex dot, over the chrome like the chat's (weather_dots.js). */
+.iss-weather-tip {
+  position: fixed;
+  z-index: 21;
+  pointer-events: none;
+}
+
+/* No flash on a tap of the click area. */
+.iss-weather-hit {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The chat in the video pane's info (media layout, split only): a list of lines up to the clock, following it. */
+.bt-media-layout.has-info .bt-media-info:has(.iss-chat) {
+  padding: 6px 8px;
+}
+
+.iss-chat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  /* Always the small size (the info's least, 13px, at 0.85): not `--bt-info-font`, which grows to fit the box as the divider moves. */
+  font-size: 11px;
+  /* No browser flash on a press (the blue tap rectangle, a word selected by a double click): what lights up is the time to jump to (`.is-pressed`). */
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-chat button:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.iss-chat-list {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The pane moves the scroll itself (a target the view eases toward): the browser must not add its own corrections. */
+  overflow-anchor: none;
+  /* Room above the first line and under the last (set from the list's height, chat_pane.js): they can be in the middle too. */
+  padding: var(--iss-chat-pad, 0px) 0;
+}
+
+.iss-chat-line {
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.iss-chat-line.is-current {
+  background: rgba(143, 161, 179, 0.2);
+  box-shadow: inset 3px 0 0 #8fa1b3;
+}
+
+/* The lines after the video's time: what is still to be said. */
+.iss-chat-line.is-future {
+  opacity: 0.55;
+}
+
+.iss-chat-line.is-selected {
+  background: rgba(255, 179, 0, 0.2);
+}
+
+.iss-chat-time {
+  margin-right: 0.6em;
+  color: #8fa1b3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The time a press is about to jump to: lit blue, the header time or a quoted one. */
+.iss-chat-time.is-pressed,
+.iss-chat-clock.is-pressed {
+  background: rgba(94, 132, 241, 0.6);
+  color: #fff;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px rgba(94, 132, 241, 0.6);
+}
+
+.iss-chat-avatar {
+  width: 1.5em;
+  height: 1.5em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: -0.35em;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* The author's picture at full size, beside the small one under a mouse (sen/chat_avatar.js). */
+.iss-avatar-preview {
+  position: fixed;
+  z-index: 60;
+  padding: 4px;
+  border-radius: 14px;
+  background: #0b0f14;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.iss-avatar-preview[hidden] {
+  display: none;
+}
+
+.iss-avatar-preview img {
+  display: block;
+  border-radius: 10px;
+  min-width: 96px;
+  min-height: 96px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.iss-chat-author {
+  margin-right: 0.5em;
+  /* As on YouTube: gray (white at 70%), and the channel's owner and the moderators in its moderator blue. */
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 600;
+}
+
+.iss-chat-author.is-privileged {
+  color: #5e84f1;
+}
+
+/* Members and verified users. */
+.iss-chat-author.is-supporter {
+  color: #e040fb;
+}
+
+.iss-chat-text {
+  overflow-wrap: anywhere;
+}
+
+.iss-chat-clock {
+  padding: 0 3px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 179, 0, 0.25);
+  color: #ffc94d;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+button.iss-chat-clock {
+  cursor: pointer;
+}
+
+/* A quoted time the video cannot show: text, not a link. */
+.iss-chat-clock.is-dead {
+  background: none;
+  color: inherit;
+  opacity: 0.6;
+  text-decoration: underline dotted;
+}
+
+.iss-chat-empty {
+  padding: 8px 4px;
+  color: #8fa1b3;
+}
+
+.iss-chat-follow {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.iss-chat-follow[hidden],
+.iss-chat-empty[hidden] {
+  display: none;
+}
+
+/* "+": opens the field to write in the chat. An overlay on the list's bottom-right corner, above "Follow" (the list keeps all the height), and larger. */
+.iss-chat-plus {
+  position: absolute;
+  right: 8px;
+  bottom: 36px;
+  width: 44px;
+  height: 44px;
+  padding: 0 0 3px;
+  border: 0;
+  border-radius: 50%;
+  background: #00e5ff;
+  color: #00222b;
+  font: 600 30px/1 system-ui, sans-serif;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-chat-plus[hidden] {
+  display: none;
+}
+
+/* The chat's view (the list and what lies over it) and, under it, the field to write in (sen/chat/chat_composer.js). */
+.iss-chat-view {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.iss-chat-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.iss-chat-composer[hidden],
+.iss-chat-composer [hidden] {
+  display: none;
+}
+
+.iss-chat-send {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 600 11px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.iss-chat-send:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.iss-chat-why {
+  color: #8fa1b3;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+/* Inside the `why` text, at its end: the same size, running on with it. */
+.iss-chat-yt {
+  all: unset;
+  color: #9fd4ff;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.iss-chat-yt:focus-visible {
+  outline: 1px solid #9fd4ff;
+}
+
+.iss-chat-form {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+}
+
+.iss-chat-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.iss-chat-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 4px 8px 4px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  background: #0b0e12;
+  color: #f4f4f4;
+  font: inherit;
+}
+
+.iss-chat-clear {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  background: #c3ccd5;
+  -webkit-mask: url('images/clear.svg') center / 14px no-repeat;
+  mask: url('images/clear.svg') center / 14px no-repeat;
+  cursor: pointer;
+}
+
+.iss-chat-input:focus {
+  outline: none;
+  border-color: #ffb300;
+}
+
+/* The confirmation before a message is posted (a modal <dialog>, in the top layer: above the pane, the globe and the menus). */
+.iss-chat-confirm {
+  box-sizing: border-box;
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  background: #11161c;
+  color: #f4f4f4;
+  font: 13px/1.35 system-ui, sans-serif;
+}
+
+.iss-chat-confirm::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.iss-chat-confirm-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.iss-chat-confirm-message {
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: #0b0e12;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.iss-chat-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.iss-chat-confirm-cancel,
+.iss-chat-confirm-ok {
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 600 13px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.iss-chat-confirm-ok {
+  border-color: #ffb300;
+  background: #ffb300;
+  color: #111;
+}
+
+.iss-chat-note {
+  color: #ff8a80;
+  line-height: 1.3;
+}
+
+.iss-chat-note.is-info {
+  color: #9fd4ff;
+}
+
+/* Writing on a phone (sen/chat/chat_compose_mode.js): the pane is all that the keyboard leaves of the screen, laid over the globe,
+   the timeline and the menus, and holds the video and the field only. */
+body.iss-composing #btSplitPane {
+  top: var(--iss-vv-top, 0px) !important;
+  bottom: auto !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: auto !important;
+  height: var(--iss-vv-height, 100%) !important;
+  z-index: 2000 !important;
+}
+
+body.iss-composing .bt-split-divider {
+  display: none !important;
+}
+
+/* Full height (video_place.js) gives the chat a share of the pane, but never less than its least height (five lines): the "+" over its
+   bottom-right corner (80 px up from the bottom) is always in view. */
+body .bt-media-layout.has-info.has-info-share:not(.is-row) .bt-media {
+  flex-basis: min(calc((1 - var(--bt-media-info-share, 0.2)) * 100%), calc(100% - var(--bt-media-reserve-h)));
+}
+
+/* Stacked (portrait): the field is at the bottom, right above the keyboard, and the video's box has everything above it (whatever the chat's
+   share in full height, the 16:9 box of the split): the full-height fit gets the most room. Beside the video (landscape) the field is at the
+   bottom of the chat's column. */
+body.iss-composing .bt-media-layout.has-info:not(.is-row) {
+  justify-content: flex-start;
+}
+
+body.iss-composing .bt-media-layout.has-info:not(.is-row) .bt-media {
+  flex: 1 1 0;
+  width: 100%;
+  aspect-ratio: auto;
+}
+
+body.iss-composing .bt-media-layout.has-info:not(.is-row) .bt-media-info {
+  flex: 0 0 auto;
+}
+
+.iss-chat.is-composing .iss-chat-view {
+  display: none;
+}
+
+.iss-chat.is-composing .iss-chat-composer {
+  margin-top: auto;
+  border-top: 0;
+}
+
+.iss-chat.is-composing {
+  justify-content: flex-end;
+}
+
+.iss-chat.is-composing {
+  font-size: 14px;
+}
+
+@media (pointer: coarse) {
+  /* 16px: a smaller field makes iOS zoom the page when it is focused. */
+  .iss-chat-input {
+    font-size: 16px;
+  }
+}
+
+.bt-split-btn.iss-chat-toggle {
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+}
+
+.bt-split-btn.iss-chat-toggle.is-on {
+  background: rgba(255, 179, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.bt-split-btn.iss-chat-toggle[hidden] {
+  display: none;
+}
+
+/* The gyro pan's switch (video_view.js): lit while turning the phone pans the video. */
+.bt-split-btn.iss-gyro-toggle {
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+}
+
+.bt-split-btn.iss-gyro-toggle.is-on {
+  background: rgba(255, 179, 0, 0.75);
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.bt-split-btn.iss-gyro-toggle[hidden] {
+  display: none;
+}
+
+/* What the ISS can see: the ground where it stands on the horizon. */
+.iss-horizon {
+  fill: none;
+  stroke: #ffd36a;
+  stroke-width: 1.2;
+  stroke-opacity: 0.6;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+}
+
+/* Around the user's location (USER_CIRCLE_RADIUS_KM). */
+.iss-user-circle {
+  fill: none;
+  stroke: #ff3b3b;
+  stroke-width: 1.6;
+  stroke-opacity: 0.9;
+  stroke-linejoin: round;
+}
+
+/*
+ * The camera's view frustum: edges from the ISS to its footprint, which is tinted.
+ * Dotted: the camera's whole field of view. Plain: the part the video pane shows (cropped video).
+ */
+.iss-frustum-edges {
+  fill: none;
+  stroke: #ffd36a;
+  stroke-width: 1.1;
+  stroke-opacity: 0.6;
+  stroke-dasharray: 2 4;
+  stroke-linejoin: round;
+}
+
+.iss-frustum-crop-edges {
+  fill: none;
+  stroke: #ffd36a;
+  stroke-width: 1.1;
+  stroke-opacity: 0.8;
+  stroke-linejoin: round;
+}
+
+.iss-frustum-fill {
+  fill: #ffd36a;
+  fill-opacity: 0.16;
+  stroke: none;
+}
+
+/* The front camera's frustum, pale magenta: the bottom face from the ISS, and the outline of the ground it covers. Dotted / plain as above. */
+.iss-front-edges {
+  fill: none;
+  stroke: #ffb3e6;
+  stroke-width: 1.1;
+  stroke-opacity: 0.6;
+  stroke-dasharray: 2 4;
+  stroke-linejoin: round;
+}
+
+.iss-front-crop-edges {
+  fill: none;
+  stroke: #ffb3e6;
+  stroke-width: 1.1;
+  stroke-opacity: 0.8;
+  stroke-linejoin: round;
+}
+
+.iss-marker-glow {
+  fill: #ffd36a;
+  fill-opacity: 0.25;
+}
+
+.iss-marker-panel {
+  fill: #e0a526;
+  stroke: #fff;
+  stroke-width: 0.8;
+}
+
+.iss-marker-truss {
+  stroke: #fff;
+  stroke-width: 1.4;
+}
+
+.iss-marker-core {
+  fill: #fff;
+}
+
+/* ISS plays the live stream at 1x: no time speed control (text and menu next to Play), no "Zoomed in …" view label, and no big play / pause flash on the globe. */
+body.iss-on .timeline-chrome-speed-wrap,
+body.iss-on #selection-time-text,
+body.iss-on #playPauseFlash {
+  display: none !important;
+}
+
+/*
+ * A lighter timeline corner: the clock plays at 1 s/s all the time (the live lock: the core hides the play button); the imagery credit (NASA, EUMETSAT) is in the
+ * About panel; the date line shows only while a Sen clip plays (a clip is from another day), and the time of day only when not live.
+ * The loading / missing status of the imagery stays.
+ */
+body.iss-on #current-time-text .time-bar-status.is-credit,
+body.iss-on:not(.iss-clip) #current-time-text .time-bar-day,
+body.iss-on.iss-live #current-time-text .time-bar-tod {
+  display: none !important;
+}
+
+/* No view info (the captions, their hide button and the "Show views info" button) and no drag hint: the screen stays clear. */
+body.iss-on .view-caption,
+body.iss-on .view-caption-toggle,
+body.iss-on .view-caption-analemma-mode,
+body.iss-on .view-caption-show,
+body.iss-on #dragHintStack {
+  display: none !important;
+}
+
+/* Live video in the split pane: covers the full height (cropped at the sides, panned by drag) or spans the full width. */
+.iss-split-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Sized and placed by video_view.js. */
+.iss-video-frame {
+  position: absolute;
+}
+
+.iss-video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* The player's "More videos" strip, shown when it is paused, sits at the bottom of its iframe: the iframe is twice as tall as the frame,
+   its picture (centered, as wide as the frame) in the frame and the strip in the half below, which the frame clips. */
+.iss-video-frame.iss-video-crop-more {
+  overflow: hidden;
+}
+
+.iss-video-frame.iss-video-crop-more iframe {
+  inset: auto 0 auto 0;
+  top: -50%;
+  height: 200%;
+}
+
+/* Over the top of the video (bottom set in video_view.js, leaving the player's own UI): horizontal pan, tap to play / pause. */
+.iss-video-pan {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  touch-action: none;
+  cursor: grab;
+}
+
+.iss-video-pan.is-panning {
+  cursor: grabbing;
+}
+
+/* The buttons over the pane's corners are the shared ones (core `.bt-split-btn`, split_controls.js): the fit button, the
+   fullscreen and the pane's place on the left, the sound and the × on the right. In fullscreen the way out (the globe), the
+   chat button and the sound stay. In every mode (split or fullscreen, portrait or landscape) they are one row under the
+   place label: `--iss-nadir-h` is the label's height plus its gap, 0 while the label is hidden. */
+.iss-split-stage .bt-split-bar {
+  top: calc(8px + var(--iss-nadir-h, 0px) + var(--iss-note-h, 0px));
+}
+
+/* Portrait fullscreen keeps the fit button (full width / full height, video_view.js). */
+@media not all and (min-aspect-ratio: 1/1) {
+  .iss-split-stage .bt-split-bar.is-fullscreen .bt-split-fit:not([hidden]) {
+    display: grid;
+  }
+}
+
+/* A clip playing in its own window (video/external_window_player.js): the card that stands for it in the pane. It is
+   above the pan layer, but only its own controls take presses. */
+.iss-ext-card {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: #fff;
+  font: 500 14px/1.35 system-ui, sans-serif;
+  pointer-events: none;
+}
+
+.iss-ext-card > * {
+  max-width: 34em;
+}
+
+.iss-ext-title {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.iss-ext-meta {
+  opacity: 0.8;
+}
+
+.iss-ext-status {
+  font-weight: 700;
+  color: #1de9b6;
+}
+
+.iss-ext-status[data-open="0"] {
+  color: #ffb74d;
+}
+
+.iss-ext-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.iss-ext-buttons button {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.iss-ext-buttons button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.iss-ext-note {
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+/* One row in the top corner opposite the hamburger, level with it (top 8px, 40px high): the target button at the screen's edge,
+   the pass table opening from it toward the menu. The row stops short of the menu (--menu-corner-size and a gap): the table is
+   cropped there. The same insets as the view menus' row there (bt/style.css .opposite-top-chrome): beside the vertical timeline,
+   not over it, and beside the video pane when it is on this side. */
+.iss-row {
+  position: fixed;
+  top: 11px;
+  z-index: 26;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.iss-row[hidden] {
+  display: none !important;
+}
+
+.iss-row.is-menu-right {
+  left: 8px;
+  right: calc(var(--menu-corner-size, 56px) + 8px);
+}
+
+.iss-row.is-menu-left {
+  left: calc(var(--menu-corner-size, 56px) + 8px);
+  right: 8px;
+  flex-direction: row-reverse;
+}
+
+body.timeline-vertical .iss-row.is-menu-right {
+  left: calc(var(--timeline-interior-inset, 172px) / var(--bt-ui-scale, 1) + 8px);
+}
+
+body.timeline-vertical .iss-row.is-menu-left {
+  right: calc(var(--timeline-interior-inset, 172px) / var(--bt-ui-scale, 1) + 8px);
+}
+
+/* The video pane is on this side (split_view.js flip: left; not flipped: right): the row moves in to the split line. */
+body.bt-split-row.bt-split-flip .iss-row.is-menu-right {
+  left: calc(var(--bt-split, 0) * 100% + 8px);
+}
+
+body.bt-split-row:not(.bt-split-flip) .iss-row.is-menu-left {
+  right: calc(var(--bt-split, 0) * 100% + 8px);
+}
+
+body.timeline-vertical.bt-split-row.bt-split-flip .iss-row.is-menu-right {
+  left: calc(var(--bt-split, 0) * 100% + var(--timeline-interior-inset, 172px) / var(--bt-ui-scale, 1) + 8px);
+}
+
+body.timeline-vertical.bt-split-row:not(.bt-split-flip) .iss-row.is-menu-left {
+  right: calc(var(--bt-split, 0) * 100% + var(--timeline-interior-inset, 172px) / var(--bt-ui-scale, 1) + 8px);
+}
+
+/* The video pane is at the top (split_view.js `canPaneTop`): the row goes down with the menu, to the Earth half. */
+body.bt-split-col.bt-split-top .iss-row {
+  top: calc(var(--bt-split-start, 0) * 100% + 11px);
+}
+
+/* The target button and the eye button under it: one column at the screen's edge, each one's drawer beside it. */
+.iss-col {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The target button (location.js): the first tap asks for the place, then it opens and closes the pass table. Pale red, as the
+   circle around the place; open, a red fill. */
+.iss-target {
+  box-sizing: border-box;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 150, 150, 0.55);
+  background: rgba(40, 14, 14, 0.88);
+  color: #ffb4b4;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-target[hidden] {
+  display: none !important;
+}
+
+.iss-target:hover,
+.iss-target:focus-visible {
+  color: #fff;
+  border-color: rgba(255, 190, 190, 0.9);
+}
+
+.iss-target:active {
+  transform: scale(0.96);
+}
+
+.iss-target.is-on {
+  color: #fff;
+  background: rgba(190, 50, 50, 0.55);
+  border-color: rgba(255, 150, 150, 0.85);
+}
+
+/* Waiting for the position the tap asked for. */
+.iss-target.is-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.iss-target svg {
+  pointer-events: none;
+}
+
+/* The eye button (visibility_drawer.js) under the target button: opens the drawer of what the overlay shows. Pale blue, as the ground track;
+   open, a blue fill; shut, plain. */
+.iss-vis-toggle {
+  box-sizing: border-box;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(140, 195, 255, 0.55);
+  background: rgba(10, 24, 44, 0.88);
+  color: #a8d0ff;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-vis-toggle:hover,
+.iss-vis-toggle:focus-visible {
+  color: #fff;
+  border-color: rgba(190, 220, 255, 0.9);
+}
+
+.iss-vis-toggle:active {
+  transform: scale(0.96);
+}
+
+.iss-vis-toggle.is-on {
+  color: #fff;
+  background: rgba(50, 110, 190, 0.55);
+  border-color: rgba(140, 195, 255, 0.85);
+}
+
+.iss-vis-toggle svg {
+  pointer-events: none;
+}
+
+/* The Sun view button (sun_toggle.js), in the menu corner column under the extension toggle, like the Filter and age buttons there: the globe
+   seen from the Sun, or from above the ISS. Selected, a yellow fill. */
+.iss-sun-toggle {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #ffe9a0;
+  background: rgba(20, 28, 40, 0.75);
+  border: 1px solid rgba(255, 226, 130, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.iss-sun-toggle[hidden],
+body.bt-split-earth-hidden .iss-sun-toggle {
+  display: none;
+}
+
+.iss-sun-toggle:hover,
+.iss-sun-toggle:focus-visible {
+  background: rgba(56, 48, 20, 0.95);
+  border-color: rgba(255, 238, 170, 0.9);
+}
+
+.iss-sun-toggle.is-on {
+  color: #ffd630;
+  background: rgba(150, 110, 0, 0.55);
+  border-color: rgba(255, 214, 48, 0.9);
+}
+
+.iss-sun-toggle svg {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+/* The pass table's drawer: as high as the button, it opens out of it toward the menu (a clip that grows from the button's side,
+   with a short slide), and closes the same way back. Closed, it takes no taps. */
+.iss-drawer {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: 53px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: clip-path 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease, visibility 0s linear 0.32s;
+}
+
+.iss-drawer.is-menu-right {
+  clip-path: inset(0 100% 0 0);
+  transform: translateX(-14px);
+}
+
+.iss-drawer.is-menu-left {
+  clip-path: inset(0 0 0 100%);
+  transform: translateX(14px);
+  direction: rtl;
+}
+
+.iss-drawer.is-open {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  clip-path: inset(0);
+  transform: none;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iss-drawer {
+    transition: none;
+  }
+}
+
+/* The scroller holds the table; wider than the room before the menu, it scrolls sideways (no bar), and is cropped at the menu's end
+   in a fade. */
+.iss-drawer-scroll {
+  box-sizing: border-box;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(6, 10, 14, 0.88);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+
+.iss-drawer-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.iss-drawer.is-cropped.is-menu-right .iss-drawer-scroll {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+
+.iss-drawer.is-cropped.is-menu-left .iss-drawer-scroll {
+  -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+
+/* The eye's drawer (visibility_drawer.js): one row of switches beside the eye button (34px, 8px under the target button), as high as the
+   switches, so it sits level with the eye. Cropped before the menu, it fades to black there instead of running under the menu's buttons. */
+.iss-vis-drawer {
+  position: absolute;
+  top: 38px;
+  max-width: calc(100% - 42px);
+  height: 42px;
+}
+
+/* Side by side with the video pane on the menu's side (the ISS video, body class `bt-split-at-menu`), the menu column moves in to the
+   split line, but the row still reaches to the screen's menu edge: over the pane. The room the drawer (and the labels) is judged by is
+   the Earth half's: it stops before the menu, which stands at the split line, as the row does when the pane is on the other side. */
+body.bt-split-row.bt-split-at-menu .iss-vis-drawer {
+  max-width: calc(100% - 42px - var(--bt-split, 0) * 100vw);
+}
+
+/* Out of the row's flow: the pass table's drawer (closed, it still has its width) must not push it away from the eye. */
+.iss-vis-drawer.is-menu-right {
+  left: 42px;
+}
+
+.iss-vis-drawer.is-menu-left {
+  right: 42px;
+}
+
+.iss-vis-drawer.is-cropped::after {
+  content: '';
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 48px;
+  pointer-events: none;
+}
+
+.iss-vis-drawer.is-cropped.is-menu-right::after {
+  right: 1px;
+  border-radius: 0 9px 9px 0;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0), #000);
+}
+
+.iss-vis-drawer.is-cropped.is-menu-left::after {
+  left: 1px;
+  border-radius: 9px 0 0 9px;
+  background: linear-gradient(to left, rgba(0, 0, 0, 0), #000);
+}
+
+.iss-vis-list {
+  box-sizing: border-box;
+  width: max-content;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 5px;
+  direction: inherit;
+}
+
+.iss-vis-switch {
+  box-sizing: border-box;
+  flex: none;
+  height: 32px;
+  margin: 0;
+  padding: 0 11px 0 9px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 16px;
+  border: 1px solid rgba(140, 195, 255, 0.4);
+  background: rgba(10, 24, 44, 0.88);
+  color: #8fb4dd;
+  font: 600 12px system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-vis-switch:hover,
+.iss-vis-switch:focus-visible {
+  color: #fff;
+  border-color: rgba(190, 220, 255, 0.9);
+}
+
+.iss-vis-switch:active {
+  transform: scale(0.97);
+}
+
+.iss-vis-switch.is-on {
+  color: #fff;
+  background: rgba(50, 110, 190, 0.55);
+  border-color: rgba(140, 195, 255, 0.85);
+}
+
+.iss-vis-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.iss-vis-label {
+  pointer-events: none;
+}
+
+/* Not enough room for the labels (visibility_drawer.js `fit`): round, icon only (the title and aria-label still name each one). */
+.iss-vis-drawer.is-compact .iss-vis-label {
+  display: none;
+}
+
+.iss-vis-drawer.is-compact .iss-vis-switch {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+}
+
+/* Three rows, 51px inside the border: the place (one cell over all), the titles (each merged across its passes), then the times. */
+.iss-pass-table {
+  width: max-content;
+  height: 100%;
+  border-collapse: collapse;
+  direction: inherit;
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+
+.iss-pass-head {
+  height: 14px;
+  padding: 0 8px;
+  font: 700 9px/14px system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: start;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* The title stays at the start of its group's cells while the table scrolls under it, so it is in view whenever any of them is. */
+.iss-pass-title {
+  position: sticky;
+  inset-inline-start: 8px;
+}
+
+/* The place the passes are for: pale red, as the target button and the circle around the place. */
+.iss-pass-where {
+  height: 19px;
+  padding: 0 8px;
+  font: 600 15px/19px system-ui, sans-serif;
+  text-align: start;
+  color: #ffb4b4;
+  border-bottom: 1px solid rgba(255, 150, 150, 0.25);
+}
+
+.iss-pass-head--last {
+  color: rgba(150, 190, 255, 0.85);
+}
+
+.iss-pass-head--next {
+  color: rgba(29, 233, 182, 0.85);
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.iss-pass-table td {
+  padding: 0;
+  height: 18px;
+  text-align: center;
+}
+
+.iss-pass-cell--next.is-first {
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* A time: a tap plays a last pass, and offers a pass ahead to the Google Calendar. */
+.iss-pass-time {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  direction: ltr;
+  padding: 0 8px;
+  font: 600 12px/18px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.iss-pass-time:hover,
+.iss-pass-time:focus-visible {
+  color: #fff !important;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.iss-pass-none {
+  padding: 0 10px !important;
+  direction: ltr;
+  font: 500 11px/18px system-ui, sans-serif;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* Ground track ahead, from now to the soonest next pass: pale green by day, dark green by night (colors set per step in overlay.js). */
+.iss-next-track {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-opacity: 0.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+/* "Add to your Google Calendar?" */
+.iss-cal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.iss-cal-dialog {
+  box-sizing: border-box;
+  width: min(100%, 340px);
+  padding: 18px 18px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(197, 230, 212, 0.55);
+  background: rgba(14, 28, 20, 0.97);
+  color: #e6f4ec;
+  font: 14px/1.4 system-ui, sans-serif;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+}
+
+.iss-cal-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: #c5e6d4;
+}
+
+.iss-cal-dialog p {
+  margin: 0 0 14px;
+}
+
+.iss-cal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.iss-cal-actions button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  border: 1px solid rgba(197, 230, 212, 0.55);
+  background: none;
+  color: #c5e6d4;
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.iss-cal-actions button.is-primary {
+  background: rgba(40, 120, 80, 0.7);
+  color: #fff;
+}
+
+.iss-cal-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* What the ISS sees ("City, Country (ago)"): the top row of the video pane, centered on 80% of its width
+   (10% margins); it wraps within that. The pane's buttons are the row under it (`--iss-nadir-h`, set by nadir_label.js). */
+.iss-nadir-label {
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 8px;
+  z-index: 1;
+  font: 600 14px/1.25 system-ui, sans-serif;
+  /* Fallback: nadir_label.js sets the color of the ground track there (day / night blue, orange: no signal). */
+  color: #ffd36a;
+  text-align: center;
+  /* A black border for contrast on any video: a stroke under the fill, and a ring of shadows where paint-order does not reach. */
+  -webkit-text-stroke: 3px #000;
+  paint-order: stroke fill;
+  text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 4px rgba(0, 0, 0, 0.7);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+/* "City, Country" and, on a second line, "(Now)" or "(2h 34min ago)". */
+.iss-nadir-unit {
+  display: inline-block;
+}
+
+.iss-nadir-when {
+  display: block;
+}
+
+/* The time line: pale red, whatever the track's color of the place above it. */
+.iss-nadir-ago {
+  color: #ff9a9a;
+}
+
+.iss-nadir-ago[hidden] {
+  display: none;
+}
+
+.iss-nadir-label[hidden] {
+  display: none;
+}
+
+/* The Sen clip filter (clip_filter.js, shared/chip_filter.css): teal where it is white elsewhere, like the clips' ribbons and
+   brackets (ARCHIVE_COLOR #1de9b6): chips and All / None when selected, the borders, the texts, the Filter button and its icon. */
+#senFilter,
+#senTitle {
+  --intensity-color: #1de9b6;
+  /* No black blur panel behind the bar: each control has its own dark backing instead (below), the title an outline. */
+  --sen-control-bg: rgba(10, 16, 24, 0.78);
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+#senFilter .chip-filter-footer,
+#senTitle .chip-filter-footer {
+  -webkit-text-stroke: 3px #000;
+  paint-order: stroke fill;
+  text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+#senFilter .chip-filter-bulk:not(.is-on) {
+  background: var(--sen-control-bg);
+}
+
+/* Chips: the teal tint over a dark base (selected ones stay solid teal). */
+#senFilter .chip-filter-type:not(.is-on) {
+  background: linear-gradient(rgba(29, 233, 182, 0.14), rgba(29, 233, 182, 0.14)), var(--sen-control-bg);
+}
+
+#senFilter .chip-filter-search,
+#senFilter .chip-filter-category {
+  border-color: rgba(29, 233, 182, 0.5);
+  color: #bdf7e8;
+}
+
+#senFilter .chip-filter-search {
+  background: linear-gradient(rgba(29, 233, 182, 0.1), rgba(29, 233, 182, 0.1)), var(--sen-control-bg);
+}
+
+#senFilter .chip-filter-search::placeholder {
+  color: rgba(29, 233, 182, 0.6);
+}
+
+#senFilter .chip-filter-search:focus {
+  border-color: #1de9b6;
+}
+
+/* The small microphone beside the search box (voice_ask.js): a teal square like the bulk buttons, pulsing while it listens. */
+#senFilter .chip-filter-mic {
+  all: unset;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(29, 233, 182, 0.5);
+  color: #1de9b6;
+  background: var(--sen-control-bg);
+  cursor: pointer;
+}
+
+#senFilter .chip-filter-mic[hidden] {
+  display: none;
+}
+
+#senFilter .chip-filter-mic:hover {
+  border-color: #1de9b6;
+}
+
+#senFilter .chip-filter-mic.is-on {
+  background: #1de9b6;
+  border-color: #1de9b6;
+  color: #05281f;
+  animation: sen-mic-pulse 1.1s ease-in-out infinite;
+}
+
+/* The AI button (sen/voice_ask.js): in the menu column, the size and shape of the Filter button, teal like it; the icon is a sparkle.
+   While it listens it is lit and pulses, with "Listening…" beside it (on the side away from the menu). */
+.sen-ai-btn {
+  all: unset;
+  box-sizing: border-box;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #1de9b6;
+  background: rgba(20, 28, 40, 0.75);
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.sen-ai-btn[hidden],
+body.bt-split-earth-hidden .sen-ai-btn {
+  display: none;
+}
+
+.sen-ai-btn:hover,
+.sen-ai-btn:focus-visible {
+  background: rgba(40, 56, 80, 0.95);
+  border-color: #1de9b6;
+}
+
+.sen-ai-btn svg {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+/* Toggled on: the microphone stays open until it is pressed again or "thank you" is said. */
+.sen-ai-btn.is-on {
+  background: rgba(29, 233, 182, 0.3);
+  border-color: #1de9b6;
+  animation: sen-mic-pulse 1.6s ease-in-out infinite;
+}
+
+.sen-ai-btn.is-on::before {
+  /* "Listening…", then the words heard so far (voice_ask.js sets data-label). */
+  content: attr(data-label);
+  max-width: min(360px, 45vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px);
+  transform: translateY(-50%);
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  background: rgba(20, 28, 40, 0.92);
+  color: #bdf7e8;
+  font: 12px/1.2 system-ui, sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#appMenu.menu-corner-left .sen-ai-btn.is-on::before {
+  right: auto;
+  left: calc(100% + 8px);
+}
+
+@keyframes sen-mic-pulse {
+  50% { box-shadow: 0 0 0 8px rgba(29, 233, 182, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35); }
+}
+
+#senFilter .chip-filter-bulk {
+  border-color: rgba(29, 233, 182, 0.5);
+  color: #1de9b6;
+}
+
+#senFilter .chip-filter-bulk:hover:not(:disabled):not(.is-on) {
+  border-color: #1de9b6;
+}
+
+#senFilter .chip-filter-bulk.is-on,
+#senFilter .chip-filter-bulk:active:not(:disabled) {
+  background: #1de9b6;
+  border-color: #1de9b6;
+  color: #062018;
+}
+
+/* The Filter button: a teal border and funnel (the icon is a white SVG, so it is drawn as a mask in teal), a teal fill when on. */
+#senFilterBtn {
+  border-color: rgba(29, 233, 182, 0.6);
+}
+
+#senFilterBtn img {
+  display: none;
+}
+
+#senFilterBtn::after {
+  content: '';
+  width: 22px;
+  height: 22px;
+  background: #1de9b6;
+  -webkit-mask: url('../shared/images/filter.svg') center / contain no-repeat;
+  mask: url('../shared/images/filter.svg') center / contain no-repeat;
+  pointer-events: none;
+}
+
+#senFilterBtn:hover,
+#senFilterBtn:focus-visible {
+  border-color: #1de9b6;
+}
+
+#senFilterBtn.is-on {
+  background: rgba(29, 233, 182, 0.3);
+  border-color: #1de9b6;
+}
+
+/* The Go live button (sen/go_live_button.js), in the video's top bar: a split button like the chat's. Pale red while the clock is
+   somewhere else, gray while it is live. */
+.bt-split-btn.iss-go-live {
+  border: 1.5px solid rgba(255, 107, 107, 0.7);
+  background: rgba(255, 107, 107, 0.3);
+  color: #ff9d9d;
+}
+
+.bt-split-btn.iss-go-live:hover,
+.bt-split-btn.iss-go-live:focus-visible {
+  background: rgba(255, 107, 107, 0.5);
+  border-color: #ff6b6b;
+}
+
+/* Live: nothing to go to. */
+.bt-split-btn.iss-go-live.is-live {
+  color: #9aa7b4;
+  background: rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.2);
+  cursor: default;
+}
+
+/* The last line of the chat list (sen/chat_pane.js): a red line, back to the live edge; gray while the clock is there. */
+.iss-chat-golive {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 4px 8px;
+  border-top: 2px solid #ff4d4d;
+  color: #ff6b6b;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.iss-chat-golive:not(.is-live):hover,
+.iss-chat-golive:not(.is-live):focus-visible {
+  background: rgba(255, 77, 77, 0.12);
+}
+
+.iss-chat-golive.is-live {
+  border-top-color: rgba(255, 255, 255, 0.25);
+  color: #9aa7b4;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* The age view button (sen/age_view_toggle.js): under the Filter button, the size and shape of it, teal like it. The icon is a
+   clock whose ring is the five age colors; on, the teal fill. */
+.iss-age-toggle {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: rgba(20, 28, 40, 0.75);
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s ease, border-color 0.15s ease;
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.iss-age-toggle[hidden],
+body.bt-split-earth-hidden .iss-age-toggle {
+  display: none;
+}
+
+.iss-age-toggle:hover,
+.iss-age-toggle:focus-visible {
+  background: rgba(40, 56, 80, 0.95);
+  border-color: #1de9b6;
+}
+
+.iss-age-toggle.is-on {
+  background: rgba(29, 233, 182, 0.3);
+  border-color: #1de9b6;
+}
+
+/* Every ground track at once (a long press): a second ring around the button. */
+.iss-age-toggle.is-tracks {
+  box-shadow: 0 0 0 2px rgba(29, 233, 182, 0.75), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+.iss-age-toggle svg {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+
+/* The question before a clip's window opens when nothing was clicked (external_window_player.js): a spoken question, for one. */
+.iss-ext-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+  /* It does not block the page (the AI button stays within reach, to turn the microphone off): only the box takes presses. */
+  pointer-events: none;
+}
+
+.iss-ext-confirm-box {
+  pointer-events: auto;
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px));
+  padding: 16px 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  background: rgba(20, 28, 40, 0.97);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  color: #e6fff8;
+  font: 14px/1.35 system-ui, sans-serif;
+}
+
+.iss-ext-confirm-question {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.iss-ext-confirm-row {
+  display: grid;
+  grid-template-columns: 7.5em 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.iss-ext-confirm-label {
+  color: rgba(189, 247, 232, 0.65);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.iss-ext-confirm-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.iss-ext-confirm-text.is-clip {
+  color: #bdf7e8;
+  font-weight: 600;
+}
+
+.iss-ext-confirm-listening {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #1de9b6;
+}
+
+.iss-ext-confirm-listening[hidden] {
+  display: none;
+}
+
+.iss-ext-confirm-why {
+  margin-top: 6px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.iss-ext-confirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.iss-ext-confirm-buttons button {
+  all: unset;
+  box-sizing: border-box;
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  color: #1de9b6;
+  cursor: pointer;
+  font: 13px system-ui, sans-serif;
+}
+
+.iss-ext-confirm-buttons button:hover,
+.iss-ext-confirm-buttons button:focus-visible {
+  border-color: #1de9b6;
+  outline: 2px solid rgba(29, 233, 182, 0.4);
+}
+
+.iss-ext-confirm-buttons button.primary {
+  background: #1de9b6;
+  color: #062018;
+}
+
+/* The note about the question asked (sen/ask_note.js): under the lowest button of the menu column, on the side away from the menu. */
+.sen-ask-note {
+  position: fixed;
+  z-index: 22;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(380px, 62vw);
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(29, 233, 182, 0.6);
+  background: rgba(20, 28, 40, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  color: #bdf7e8;
+  font: 12px/1.35 system-ui, sans-serif;
+}
+
+.sen-ask-note[hidden],
+body.bt-split-earth-hidden .sen-ask-note {
+  display: none;
+}
+
+.sen-ask-note-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sen-ask-note-text[hidden] {
+  display: none;
+}
+
+.sen-ask-note-action {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: #1de9b6;
+  white-space: nowrap;
+}
+
+.sen-ask-note-action[hidden] {
+  display: none;
+}
+
+.sen-ask-note-action:hover,
+.sen-ask-note-action:focus-visible {
+  text-decoration: underline;
+}
+
+/* Loss of the video signal (signal_loss.js): an orange note at the top of the globe half, one row below the Last / Next Pass
+   buttons (signal_loss.js sets `top` from the row's bottom; this is the fallback), centered on the globe half. */
+.iss-signal-loss {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  z-index: 22;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  color: #ffb347;
+  font: 600 13px/1.35 system-ui, sans-serif;
+  transform: translateX(-50%);
+  /* No panel: a black outline keeps it readable on the globe or the video (as the place label's). */
+  -webkit-text-stroke: 3px #000;
+  paint-order: stroke fill;
+  text-shadow: 1px 0 #000, -1px 0 #000, 0 1px #000, 0 -1px #000, 0 0 3px rgba(0, 0, 0, 0.9), 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+/* The globe half only: beside the video pane (side by side) the note is centered on what is left of the screen. */
+body.bt-split-row.bt-split-flip .iss-signal-loss:not(.in-pane) {
+  left: calc(50% + var(--bt-split, 0) * 50%);
+}
+
+body.bt-split-row:not(.bt-split-flip) .iss-signal-loss:not(.in-pane) {
+  left: calc((1 - var(--bt-split, 0)) * 50%);
+}
+
+.iss-signal-loss[hidden],
+body.bt-split-earth-hidden .iss-signal-loss:not(.in-pane) {
+  display: none;
+}
+
+/* While the pane shows the video, the note is the top row of the pane, in lieu of the place label (which is silent with no
+   signal): signal_loss.js puts it in the stage and sets `--iss-note-h` for the buttons' row under it. */
+.iss-signal-loss.in-pane {
+  position: absolute;
+  top: 8px;
+  /* The place label's box (10% margins, centered, wraps within) and font, in orange. */
+  left: 10%;
+  right: 10%;
+  width: auto;
+  max-width: none;
+  transform: none;
+  z-index: 3;
+  font: 600 14px/1.25 system-ui, sans-serif;
+  text-align: center;
+}
+
+.iss-signal-loss-action {
+  all: unset;
+  flex: 0 0 auto;
+  cursor: pointer;
+  color: #fff;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+.iss-signal-loss-action:hover,
+.iss-signal-loss-action:focus-visible {
+  color: #ffd9a0;
+}
+
+/* The label in the floating window (core floating_window.js), where it is the info under the video, not a caption over it:
+   in flow, centered, without the outline that kept it readable on the picture. */
+.bt-floating-info .iss-nadir-label {
+  position: static;
+  transform: none;
+  width: auto;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+  -webkit-text-stroke: 0;
+  text-shadow: none;
+}

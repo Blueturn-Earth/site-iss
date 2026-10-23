@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.3 -1.3 2.6 2.6" width="120" height="120">
+  <!--
+    The dot of a mega / giga wildfire on the ISS globe (ext/iss/weather_dots.js loads only the <symbol> below).
+    A flame with a darker heart. Takes the color of `color` (currentColor), over a dark halo.
+  -->
+  <defs>
+    <symbol id="iss-weather-wildfire" viewBox="-1.3 -1.3 2.6 2.6" overflow="visible">
+      <defs>
+        <path id="iss-weather-wildfire-flame" d="M 0.02,-0.95 C 0.12,-0.5 0.62,-0.25 0.6,0.3 C 0.58,0.72 0.26,0.92 0,0.92 C -0.26,0.92 -0.6,0.72 -0.6,0.3 C -0.6,-0.05 -0.38,-0.25 -0.28,-0.55 C -0.16,-0.4 -0.08,-0.3 -0.02,-0.3 C -0.12,-0.6 -0.04,-0.78 0.02,-0.95 Z"/>
+      </defs>
+      <use href="#iss-weather-wildfire-flame" fill="#000" fill-opacity="0.55" stroke="#000" stroke-opacity="0.55" stroke-width="0.26" stroke-linejoin="round"/>
+      <use href="#iss-weather-wildfire-flame" fill="currentColor"/>
+      <path d="M 0,0.1 C 0.18,0.3 0.3,0.45 0.22,0.65 C 0.14,0.78 -0.14,0.78 -0.22,0.65 C -0.3,0.45 -0.12,0.3 0,0.1 Z" fill="#000" fill-opacity="0.4"/>
+    </symbol>
+  </defs>
+  <use href="#iss-weather-wildfire" style="color: #35b6ff"/>
+</svg>
