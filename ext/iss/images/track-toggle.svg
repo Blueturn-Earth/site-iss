@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" color="#fff" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Three ground tracks (partial sinusoids, one shifted along from the other) over the timeline (a horizontal line) -->
+  <path d="M2.500 9c1.900-6.500 3.800-6.500 5.700 0s3.800 6.500 5.700 0"/>
+  <path d="M5.250 9c1.900-6.500 3.800-6.500 5.700 0s3.800 6.500 5.700 0"/>
+  <path d="M8 9c1.900-6.500 3.800-6.500 5.700 0s3.800 6.500 5.700 0"/>
+  <path d="M2.500 20h19"/>
+</svg>
