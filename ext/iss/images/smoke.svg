@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.3 -1.3 2.6 2.6" width="120" height="120">
+  <!--
+    The dot of a smoke plume on the ISS globe (ext/iss/weather_dots.js loads only the <symbol> below).
+    Puffs widening as they rise. Takes the color of `color` (currentColor), over a dark halo.
+  -->
+  <defs>
+    <symbol id="iss-weather-smoke" viewBox="-1.3 -1.3 2.6 2.6" overflow="visible">
+      <defs>
+        <g id="iss-weather-smoke-puffs">
+          <circle cx="0.05" cy="0.55" r="0.26"/>
+          <circle cx="-0.2" cy="0.16" r="0.34"/>
+          <circle cx="0.26" cy="-0.1" r="0.38"/>
+          <circle cx="-0.12" cy="-0.5" r="0.42"/>
+        </g>
+      </defs>
+      <use href="#iss-weather-smoke-puffs" fill="#000" fill-opacity="0.55" stroke="#000" stroke-opacity="0.55" stroke-width="0.24"/>
+      <use href="#iss-weather-smoke-puffs" fill="currentColor"/>
+    </symbol>
+  </defs>
+  <use href="#iss-weather-smoke" style="color: #35b6ff"/>
+</svg>
