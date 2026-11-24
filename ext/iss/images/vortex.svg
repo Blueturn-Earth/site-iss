@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1.3 -1.3 2.6 2.6" width="120" height="120">
+  <!--
+    The dot of a weather event on the ISS globe (ext/iss/weather_dots.js loads only the <symbol> below).
+    Three arms spiral out of an eye, like a hurricane seen from space. It takes the color of `color` (currentColor),
+    over a dark halo so it reads on clouds and snow. Origin (0,0) = where the event is.
+  -->
+  <defs>
+    <symbol id="iss-weather-vortex" viewBox="-1.3 -1.3 2.6 2.6" overflow="visible">
+      <defs>
+        <g id="iss-weather-vortex-arms" fill="none" stroke-linecap="round">
+          <path d="M 0.05,-0.36 C 0.62,-0.40 0.98,0.08 0.66,0.66"/>
+          <path d="M 0.05,-0.36 C 0.62,-0.40 0.98,0.08 0.66,0.66" transform="rotate(120)"/>
+          <path d="M 0.05,-0.36 C 0.62,-0.40 0.98,0.08 0.66,0.66" transform="rotate(240)"/>
+        </g>
+      </defs>
+      <use href="#iss-weather-vortex-arms" stroke="#000" stroke-opacity="0.55" stroke-width="0.5"/>
+      <use href="#iss-weather-vortex-arms" stroke="currentColor" stroke-width="0.28"/>
+      <circle r="0.27" fill="#000" fill-opacity="0.55"/>
+      <circle r="0.19" fill="currentColor"/>
+    </symbol>
+  </defs>
+  <use href="#iss-weather-vortex" style="color: #35b6ff"/>
+</svg>
